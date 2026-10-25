@@ -51,6 +51,21 @@ const initialEstimate = {
   matRatePercent: 15,
 };
 
+const initialLoads = [
+  { id: "hospital", name: "Hospitals & clinics", type: "Critical care", priority: 5, demandMwhPerDay: 45 },
+  { id: "emergency", name: "Emergency services", type: "Emergency response", priority: 4, demandMwhPerDay: 20 },
+  { id: "water", name: "Water treatment", type: "Essential services", priority: 3, demandMwhPerDay: 35 },
+  { id: "homes", name: "Community homes", type: "Community demand", priority: 2, demandMwhPerDay: 110 },
+];
+
+const priorityNames = {
+  5: "Critical · first",
+  4: "High",
+  3: "Important",
+  2: "Standard",
+  1: "Flexible",
+};
+
 const formatNumber = (value, maximumFractionDigits = 0) =>
   new Intl.NumberFormat("en-IN", { maximumFractionDigits }).format(value);
 
@@ -58,6 +73,8 @@ const formatCrore = (value) =>
   `₹${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 1 }).format(value)} cr`;
 
 const formatEnergy = (value) => `${formatNumber(value)} MWh`;
+const formatDailyEnergy = (value) =>
+  `${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 1 }).format(value)} MWh/day`;
 
 function Icon({ name, size = 18 }) {
   const paths = {
@@ -88,7 +105,7 @@ function Icon({ name, size = 18 }) {
   );
 }
 
-function Field({ label, value, onChange, suffix, min = 0, step = 1, hint }) {
+function Field({ label, value, onChange, suffix, min = 0, max, step = 1, hint }) {
   return (
     <label className="field">
       <span>{label}</span>
@@ -96,6 +113,7 @@ function Field({ label, value, onChange, suffix, min = 0, step = 1, hint }) {
         <input
           type="number"
           min={min}
+          max={max}
           step={step}
           value={value}
           onChange={(event) => onChange(event.target.value)}
@@ -115,6 +133,12 @@ function App() {
   const [optimization, setOptimization] = useState(null);
   const [optimizerLoading, setOptimizerLoading] = useState(false);
   const [optimizerError, setOptimizerError] = useState("");
+  const [loads, setLoads] = useState(initialLoads);
+  const [streetLampWattage, setStreetLampWattage] = useState(100);
+  const [streetLampHoursPerNight, setStreetLampHoursPerNight] = useState(12);
+  const [dispatch, setDispatch] = useState(null);
+  const [dispatchLoading, setDispatchLoading] = useState(false);
+  const [dispatchError, setDispatchError] = useState("");
   const [estimateInputs, setEstimateInputs] = useState(initialEstimate);
   const [estimate, setEstimate] = useState(null);
   const [estimateLoading, setEstimateLoading] = useState(false);
@@ -134,6 +158,7 @@ function App() {
       ),
     );
     setOptimization(null);
+    setDispatch(null);
   };
 
   const addPlant = () => {
@@ -151,11 +176,38 @@ function App() {
       },
     ]);
     setOptimization(null);
+    setDispatch(null);
   };
 
   const removePlant = (id) => {
     setPlants((current) => current.filter((plant) => plant.id !== id));
     setOptimization(null);
+    setDispatch(null);
+  };
+
+  const runDispatch = async (generationMwh) => {
+    setDispatchLoading(true);
+    setDispatchError("");
+    try {
+      const response = await fetch("/api/dispatch", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          availableGenerationMwhPerDay: generationMwh / 365,
+          streetLampWattage: Number(streetLampWattage),
+          streetLampHoursPerNight: Number(streetLampHoursPerNight),
+          loads,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Could not dispatch available generation.");
+      setDispatch(payload);
+    } catch (error) {
+      setDispatch(null);
+      setDispatchError(error.message || "The C++ priority queue could not be reached.");
+    } finally {
+      setDispatchLoading(false);
+    }
   };
 
   const runOptimization = async (event) => {
@@ -172,11 +224,22 @@ function App() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Could not optimize this portfolio.");
       setOptimization(payload);
+      setDispatch(null);
+      await runDispatch(payload.annualGenerationMwh);
     } catch (error) {
       setOptimizerError(error.message || "The C++ optimizer could not be reached.");
     } finally {
       setOptimizerLoading(false);
     }
+  };
+
+  const updateLoad = (id, key, value) => {
+    setLoads((current) =>
+      current.map((load) =>
+        load.id === id ? { ...load, [key]: Number(value) } : load,
+      ),
+    );
+    setDispatch(null);
   };
 
   const updateEstimateInput = (key, value) => {
@@ -288,6 +351,7 @@ function App() {
           </div>
 
           {activeView === "optimizer" ? (
+            <div className="optimizer-view">
             <div className="planner-grid">
               <section className="panel portfolio-panel">
                 <div className="panel-heading">
@@ -298,8 +362,8 @@ function App() {
 
                 <form onSubmit={runOptimization}>
                   <div className="constraints-grid">
-                    <Field label="Capital investment ceiling" suffix="₹ crore" value={capitalBudgetCrore} onChange={(value) => { setCapitalBudgetCrore(Number(value)); setOptimization(null); }} step={1} />
-                    <Field label="Available waste supply" suffix="tonnes / day" value={availableWasteTonnesPerDay} onChange={(value) => { setAvailableWasteTonnesPerDay(Number(value)); setOptimization(null); }} step={10} />
+                    <Field label="Capital investment ceiling" suffix="₹ crore" value={capitalBudgetCrore} onChange={(value) => { setCapitalBudgetCrore(Number(value)); setOptimization(null); setDispatch(null); }} step={1} />
+                    <Field label="Available waste supply" suffix="tonnes / day" value={availableWasteTonnesPerDay} onChange={(value) => { setAvailableWasteTonnesPerDay(Number(value)); setOptimization(null); setDispatch(null); }} step={10} />
                   </div>
 
                   <div className="plant-list-heading">
@@ -406,6 +470,135 @@ function App() {
                   <span className="source-page">SOR · PP 7, 9</span>
                 </section>
               </aside>
+            </div>
+            <section className="panel dispatch-panel">
+              <div className="dispatch-heading">
+                <div>
+                  <span className="section-kicker">03 / PRIORITY-BASED POWER ALLOCATION</span>
+                  <h2>Power the essentials first.</h2>
+                  <p className="panel-description">
+                    A C++ priority queue allocates daily generation to critical loads before community demand.
+                    Set each load's daily need and priority tier.
+                  </p>
+                </div>
+                <span className="algorithm-mark">PRIORITY QUEUE</span>
+              </div>
+
+              <div className="dispatch-layout">
+                <div className="dispatch-loads">
+                  <div className="dispatch-column-head">
+                    <span>LOAD / SERVICE</span><span>PRIORITY</span><span>NEED / DAY</span><span>ALLOCATED / DAY</span>
+                  </div>
+                  {(dispatch?.orderedLoads ?? [...loads].sort((a, b) => b.priority - a.priority)).map((load) => {
+                    const currentLoad = loads.find((item) => item.id === load.id);
+                    const allocated = dispatch?.loads?.find((item) => item.id === load.id);
+                    const served = allocated?.allocatedMwhPerDay ?? 0;
+                    const coverage = load.demandMwhPerDay > 0
+                      ? Math.min(100, served / load.demandMwhPerDay * 100)
+                      : 0;
+                    return (
+                      <div className="dispatch-row" key={load.id}>
+                        <div className="dispatch-load-name">
+                          <span className={`priority-badge tier-${currentLoad.priority}`}>T{currentLoad.priority}</span>
+                          <div><strong>{currentLoad.name}</strong><small>{currentLoad.type}</small></div>
+                        </div>
+                        <label className="priority-control">
+                          <span className="sr-only">{currentLoad.name} priority</span>
+                          <select
+                            aria-label={`${currentLoad.name} priority`}
+                            value={currentLoad.priority}
+                            onChange={(event) => updateLoad(currentLoad.id, "priority", event.target.value)}
+                          >
+                            {[5, 4, 3, 2, 1].map((tier) => (
+                              <option value={tier} key={tier}>T{tier} · {priorityNames[tier]}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="demand-control">
+                          <span className="sr-only">{currentLoad.name} demand MWh per day</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            value={currentLoad.demandMwhPerDay}
+                            onChange={(event) => updateLoad(currentLoad.id, "demandMwhPerDay", event.target.value)}
+                          />
+                          <span>MWh</span>
+                        </label>
+                        <div className="allocation-control">
+                          <strong>{dispatch ? formatDailyEnergy(served) : "—"}</strong>
+                          {dispatch && <div className="allocation-track"><span style={{ width: `${coverage}%` }} /></div>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {dispatchError && <div className="error-message" role="alert">{dispatchError}</div>}
+                  <div className="lamp-settings">
+                    <Field
+                      label="Lamp power"
+                      suffix="watts"
+                      value={streetLampWattage}
+                      min={10}
+                      max={2000}
+                      step={10}
+                      onChange={(value) => { setStreetLampWattage(Number(value)); setDispatch(null); }}
+                    />
+                    <Field
+                      label="Nightly operation"
+                      suffix="hours"
+                      value={streetLampHoursPerNight}
+                      min={0.1}
+                      max={24}
+                      step={0.5}
+                      onChange={(value) => { setStreetLampHoursPerNight(Number(value)); setDispatch(null); }}
+                    />
+                    <button
+                      className="primary-button dispatch-button"
+                      type="button"
+                      onClick={() => optimization && runDispatch(optimization.annualGenerationMwh)}
+                      disabled={!optimization || dispatchLoading}
+                    >
+                      <Icon name="bolt" size={17} />
+                      {dispatchLoading ? "Allocating…" : "Apply priority queue"}
+                    </button>
+                  </div>
+                  <p className="dispatch-note">
+                    Tier 5 is served first; equal-tier loads keep their listed order. Example load needs are planning assumptions,
+                    not values from the CERC tariff document.
+                  </p>
+                </div>
+
+                <aside className="lamp-summary">
+                  <span className="lamp-summary-kicker">STREET-LIGHTING POTENTIAL</span>
+                  {dispatchLoading ? (
+                    <div className="lamp-empty"><span className="loader" /> Allocating daily generation…</div>
+                  ) : dispatch ? (
+                    <>
+                      <strong className="lamp-count">{formatNumber(dispatch.streetLampsPowered)}</strong>
+                      <span className="lamp-unit">street lamps powered</span>
+                      <div className="lamp-energy">
+                        <span>Daily renewable generation</span>
+                        <strong>{formatDailyEnergy(dispatch.availableGenerationMwhPerDay)}</strong>
+                      </div>
+                      <div className="lamp-energy">
+                        <span>Surplus after priority loads</span>
+                        <strong>{formatDailyEnergy(dispatch.remainingEnergyMwhPerDay)}</strong>
+                      </div>
+                      <p>
+                        Based on {streetLampWattage} W per lamp for {streetLampHoursPerNight} hours each night.
+                        Lamps use only the energy left after higher-priority loads.
+                      </p>
+                    </>
+                  ) : (
+                    <div className="lamp-empty">
+                      {optimization
+                        ? "Update the priority queue to calculate street-lighting capacity."
+                        : "Optimize your portfolio to see how many lamps its power can support."}
+                    </div>
+                  )}
+                </aside>
+              </div>
+            </section>
             </div>
           ) : (
             <section className="estimator-layout">

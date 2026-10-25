@@ -45,7 +45,15 @@ scenario values. They are not CERC-approved project norms.
 - `GET /api/health` — backend status.
 - `POST /api/estimate` — calculate one project estimate.
 - `POST /api/optimize` — select a portfolio from plant options.
+- `POST /api/dispatch` — serve configured loads in priority-queue order and
+  estimate street lamps powered by any remaining daily generation.
 
 The estimate applies the MSW/RDF useful life, depreciation, and financing
 assumptions from CERC's 2024 Statement of Reasons. It is an indicative
 planning tool, not a tariff determination.
+
+The priority queue uses editable priority levels from 1 (standard) through
+5 (critical); equal-priority loads retain their entered order. Street-lamp
+capacity is calculated from surplus energy using the user-entered lamp wattage
+and nightly operating hours. Lamp and load values are planning assumptions,
+not CERC norms.

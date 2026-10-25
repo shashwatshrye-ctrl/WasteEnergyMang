@@ -117,6 +117,39 @@ function validateOptimization(body) {
   return { args, plants };
 }
 
+function validateDispatch(body) {
+  const availableGeneration = readNumber(
+    body.availableGenerationMwhPerDay,
+    "availableGenerationMwhPerDay",
+  );
+  const streetLampWattage = readNumber(body.streetLampWattage, "streetLampWattage");
+  const streetLampHours = readNumber(
+    body.streetLampHoursPerNight,
+    "streetLampHoursPerNight",
+  );
+  if (!Array.isArray(body.loads) || body.loads.length > 16) {
+    throw new Error("Provide up to 16 priority loads.");
+  }
+
+  const args = ["dispatch", availableGeneration, streetLampWattage, streetLampHours, body.loads.length];
+  const loads = body.loads.map((load, index) => {
+    if (!load || typeof load !== "object") {
+      throw new Error(`Priority load ${index + 1} is invalid.`);
+    }
+    const priority = readNumber(load.priority, `Priority load ${index + 1} priority`);
+    if (!Number.isInteger(priority)) {
+      throw new Error(`Priority load ${index + 1} must use a whole-number priority.`);
+    }
+    const demandMwhPerDay = readNumber(
+      load.demandMwhPerDay,
+      `Priority load ${index + 1} daily demand`,
+    );
+    args.push(priority, demandMwhPerDay);
+    return { ...load, priority, demandMwhPerDay };
+  });
+  return { args, loads };
+}
+
 async function readRequestBody(request) {
   const chunks = [];
   let length = 0;
@@ -154,7 +187,7 @@ async function handleApi(request, response) {
     return;
   }
 
-  if (route !== "/api/estimate" && route !== "/api/optimize") {
+  if (!["/api/estimate", "/api/optimize", "/api/dispatch"].includes(route)) {
     respondJson(response, 404, { error: "API route not found." });
     return;
   }
@@ -167,6 +200,18 @@ async function handleApi(request, response) {
     const body = await readRequestBody(request);
     if (route === "/api/estimate") {
       respondJson(response, 200, runBackend(validateEstimate(body)));
+      return;
+    }
+
+    if (route === "/api/dispatch") {
+      const { args, loads } = validateDispatch(body);
+      const result = runBackend(args);
+      result.loads = result.loads.map((load) => ({
+        ...loads[load.index],
+        ...load,
+      }));
+      result.orderedLoads = result.queueOrder.map((index) => result.loads[index]);
+      respondJson(response, 200, result);
       return;
     }
 
