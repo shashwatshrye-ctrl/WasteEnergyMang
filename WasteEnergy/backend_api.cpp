@@ -102,13 +102,62 @@ void printOptimization(int argc, char* argv[]) {
     std::cout << "]}\n";
 }
 
+void printDispatch(int argc, char* argv[]) {
+    if (argc < 6) {
+        throw std::invalid_argument(
+            "Dispatch requires available generation, lamp wattage, lamp hours, load count, and load data.");
+    }
+
+    const double availableGeneration = parseDouble(argv[2]);
+    const double streetLampWattage = parseDouble(argv[3]);
+    const double streetLampHours = parseDouble(argv[4]);
+    const int loadCount = parseInteger(argv[5]);
+
+    if (loadCount > 16 || argc != 6 + loadCount * 2) {
+        throw std::invalid_argument("Dispatch requires priority and demand for each load.");
+    }
+
+    wasteenergy::PriorityLoadOption loads[16]{};
+    for (int i = 0; i < loadCount; ++i) {
+        const int offset = 6 + i * 2;
+        loads[i] = {
+            i,
+            parseInteger(argv[offset]),
+            parseDouble(argv[offset + 1])};
+    }
+
+    const auto result = wasteenergy::dispatchGeneration(
+        wasteenergy::DispatchInputs{availableGeneration, streetLampWattage, streetLampHours},
+        loads,
+        loadCount);
+
+    std::cout << "{\"availableGenerationMwhPerDay\":" << result.availableGenerationMwhPerDay
+              << ",\"remainingEnergyMwhPerDay\":" << result.remainingEnergyMwhPerDay
+              << ",\"streetLampsPowered\":" << result.streetLampsPowered
+              << ",\"loads\":[";
+    for (int i = 0; i < result.loadCount; ++i) {
+        if (i != 0) std::cout << ',';
+        std::cout << "{\"index\":" << result.loads[i].index
+                  << ",\"priority\":" << result.loads[i].priority
+                  << ",\"demandMwhPerDay\":" << result.loads[i].demandMwhPerDay
+                  << ",\"allocatedMwhPerDay\":" << result.loads[i].allocatedMwhPerDay
+                  << "}";
+    }
+    std::cout << "],\"queueOrder\":[";
+    for (int i = 0; i < result.loadCount; ++i) {
+        if (i != 0) std::cout << ',';
+        std::cout << result.queueOrder[i];
+    }
+    std::cout << "]}\n";
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
     std::cout << std::setprecision(15);
     try {
         if (argc < 2) {
-            throw std::invalid_argument("Choose the estimate or optimize API operation.");
+            throw std::invalid_argument("Choose the estimate, optimize, or dispatch API operation.");
         }
 
         const std::string operation(argv[1]);
@@ -116,6 +165,8 @@ int main(int argc, char* argv[]) {
             printEstimate(argc, argv);
         } else if (operation == "optimize") {
             printOptimization(argc, argv);
+        } else if (operation == "dispatch") {
+            printDispatch(argc, argv);
         } else {
             throw std::invalid_argument("Unknown API operation.");
         }

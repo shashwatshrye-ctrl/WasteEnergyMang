@@ -262,4 +262,86 @@ OptimizationResult optimizePortfolio(
     return result;
 }
 
+DispatchResult dispatchGeneration(
+    const DispatchInputs& inputs,
+    const PriorityLoadOption* loads,
+    int loadCount) {
+    constexpr int maxLoads = 16;
+    if (loadCount < 0 || loadCount > maxLoads || (loadCount > 0 && loads == nullptr)) {
+        throw std::invalid_argument("Between 0 and 16 priority loads are supported.");
+    }
+    requireFinite(inputs.availableGenerationMwhPerDay, "Available generation must be finite.");
+    requireFinite(inputs.streetLampWattage, "Street lamp wattage must be finite.");
+    requireFinite(inputs.streetLampHoursPerNight, "Street lamp operating hours must be finite.");
+
+    if (inputs.availableGenerationMwhPerDay < 0.0) {
+        throw std::invalid_argument("Available generation cannot be negative.");
+    }
+    if (inputs.streetLampWattage <= 0.0) {
+        throw std::invalid_argument("Street lamp wattage must be greater than zero.");
+    }
+    if (inputs.streetLampHoursPerNight <= 0.0 || inputs.streetLampHoursPerNight > 24.0) {
+        throw std::invalid_argument("Street lamp hours must be between 0 and 24.");
+    }
+
+    struct QueueItem {
+        int originalIndex;
+        int priority;
+        double demandMwhPerDay;
+    };
+
+    std::vector<QueueItem> queue;
+    queue.reserve(loadCount);
+    for (int i = 0; i < loadCount; ++i) {
+        requireFinite(loads[i].demandMwhPerDay, "Load demand must be a finite number.");
+        if (loads[i].demandMwhPerDay < 0.0) {
+            throw std::invalid_argument("Load demand cannot be negative.");
+        }
+        queue.push_back({i, loads[i].priority, loads[i].demandMwhPerDay});
+    }
+
+    std::stable_sort(queue.begin(), queue.end(), [](const QueueItem& a, const QueueItem& b) {
+        return a.priority > b.priority;
+    });
+
+    DispatchResult result;
+    result.availableGenerationMwhPerDay = inputs.availableGenerationMwhPerDay;
+    result.loadCount = loadCount;
+
+    double remainingEnergy = inputs.availableGenerationMwhPerDay;
+
+    for (int i = 0; i < loadCount; ++i) {
+        result.loads[i].index = i;
+        result.loads[i].demandMwhPerDay = loads[i].demandMwhPerDay;
+        result.loads[i].priority = loads[i].priority;
+        result.loads[i].allocatedMwhPerDay = 0.0;
+    }
+
+    for (int q = 0; q < loadCount; ++q) {
+        const auto& item = queue[q];
+        result.queueOrder[q] = item.originalIndex;
+
+        const double toAllocate = std::min(remainingEnergy, item.demandMwhPerDay);
+        result.loads[item.originalIndex].allocatedMwhPerDay = toAllocate;
+        remainingEnergy -= toAllocate;
+        if (remainingEnergy < 1e-9) {
+            remainingEnergy = 0.0;
+        }
+    }
+
+    result.remainingEnergyMwhPerDay = remainingEnergy;
+
+    // 1 MWh = 1,000,000 Wh
+    // Daily Wh per lamp = streetLampWattage * streetLampHoursPerNight
+    // Daily MWh per lamp = (streetLampWattage * streetLampHoursPerNight) / 1,000,000
+    const double energyPerLampMwh = (inputs.streetLampWattage * inputs.streetLampHoursPerNight) / 1000000.0;
+    if (energyPerLampMwh > 0.0 && remainingEnergy > 0.0) {
+        result.streetLampsPowered = static_cast<int>(std::floor(remainingEnergy / energyPerLampMwh));
+    } else {
+        result.streetLampsPowered = 0;
+    }
+
+    return result;
+}
+
 }  // namespace wasteenergy

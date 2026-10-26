@@ -59,10 +59,42 @@ struct OptimizationResult {
     int selectedCount = 0;
 };
 
+struct PriorityLoadOption {
+    int index = 0;
+    int priority = 1;
+    double demandMwhPerDay = 0.0;
+};
+
+struct LoadAllocation {
+    int index = 0;
+    double allocatedMwhPerDay = 0.0;
+    double demandMwhPerDay = 0.0;
+    int priority = 1;
+};
+
+struct DispatchInputs {
+    double availableGenerationMwhPerDay = 0.0;
+    double streetLampWattage = 100.0;
+    double streetLampHoursPerNight = 12.0;
+};
+
+struct DispatchResult {
+    double availableGenerationMwhPerDay = 0.0;
+    double remainingEnergyMwhPerDay = 0.0;
+    int streetLampsPowered = 0;
+    LoadAllocation loads[16]{};
+    int loadCount = 0;
+    int queueOrder[16]{};
+};
+
 ProjectEstimate estimateProject(const ProjectInputs& inputs);
 OptimizationResult optimizePortfolio(
     const OptimizationInputs& inputs,
     const WastePlantOption* plants,
     int plantCount);
+DispatchResult dispatchGeneration(
+    const DispatchInputs& inputs,
+    const PriorityLoadOption* loads,
+    int loadCount);
 
 }  // namespace wasteenergy

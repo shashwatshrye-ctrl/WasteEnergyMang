@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const initialPlants = [
   {
@@ -158,7 +158,6 @@ function App() {
       ),
     );
     setOptimization(null);
-    setDispatch(null);
   };
 
   const addPlant = () => {
@@ -176,24 +175,37 @@ function App() {
       },
     ]);
     setOptimization(null);
-    setDispatch(null);
   };
 
   const removePlant = (id) => {
     setPlants((current) => current.filter((plant) => plant.id !== id));
     setOptimization(null);
-    setDispatch(null);
   };
+
+  const fallbackDailyGenerationMwh = useMemo(() => {
+    if (optimization?.annualGenerationMwh) {
+      return optimization.annualGenerationMwh / 365;
+    }
+    const annual = plants.reduce(
+      (sum, p) => sum + (p.capacityMw || 0) * 8766 * ((p.capacityUtilizationPercent || 0) / 100),
+      0
+    );
+    return annual / 365;
+  }, [optimization, plants]);
 
   const runDispatch = async (generationMwh) => {
     setDispatchLoading(true);
     setDispatchError("");
+    const mwhPerDay =
+      typeof generationMwh === "number" && Number.isFinite(generationMwh)
+        ? generationMwh / 365
+        : fallbackDailyGenerationMwh;
     try {
       const response = await fetch("/api/dispatch", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          availableGenerationMwhPerDay: generationMwh / 365,
+          availableGenerationMwhPerDay: mwhPerDay,
           streetLampWattage: Number(streetLampWattage),
           streetLampHoursPerNight: Number(streetLampHoursPerNight),
           loads,
@@ -224,7 +236,6 @@ function App() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Could not optimize this portfolio.");
       setOptimization(payload);
-      setDispatch(null);
       await runDispatch(payload.annualGenerationMwh);
     } catch (error) {
       setOptimizerError(error.message || "The C++ optimizer could not be reached.");
@@ -239,7 +250,6 @@ function App() {
         load.id === id ? { ...load, [key]: Number(value) } : load,
       ),
     );
-    setDispatch(null);
   };
 
   const updateEstimateInput = (key, value) => {
@@ -268,6 +278,10 @@ function App() {
       setEstimateLoading(false);
     }
   };
+
+  useEffect(() => {
+    runDispatch(optimization?.annualGenerationMwh);
+  }, [streetLampWattage, streetLampHoursPerNight, loads, optimization, fallbackDailyGenerationMwh]);
 
   return (
     <div className="app-shell">
@@ -362,8 +376,8 @@ function App() {
 
                 <form onSubmit={runOptimization}>
                   <div className="constraints-grid">
-                    <Field label="Capital investment ceiling" suffix="₹ crore" value={capitalBudgetCrore} onChange={(value) => { setCapitalBudgetCrore(Number(value)); setOptimization(null); setDispatch(null); }} step={1} />
-                    <Field label="Available waste supply" suffix="tonnes / day" value={availableWasteTonnesPerDay} onChange={(value) => { setAvailableWasteTonnesPerDay(Number(value)); setOptimization(null); setDispatch(null); }} step={10} />
+                    <Field label="Capital investment ceiling" suffix="₹ crore" value={capitalBudgetCrore} onChange={(value) => { setCapitalBudgetCrore(Number(value)); setOptimization(null); }} step={1} />
+                    <Field label="Available waste supply" suffix="tonnes / day" value={availableWasteTonnesPerDay} onChange={(value) => { setAvailableWasteTonnesPerDay(Number(value)); setOptimization(null); }} step={10} />
                   </div>
 
                   <div className="plant-list-heading">
@@ -541,7 +555,7 @@ function App() {
                       min={10}
                       max={2000}
                       step={10}
-                      onChange={(value) => { setStreetLampWattage(Number(value)); setDispatch(null); }}
+                      onChange={(value) => { setStreetLampWattage(Number(value)); }}
                     />
                     <Field
                       label="Nightly operation"
@@ -550,21 +564,20 @@ function App() {
                       min={0.1}
                       max={24}
                       step={0.5}
-                      onChange={(value) => { setStreetLampHoursPerNight(Number(value)); setDispatch(null); }}
+                      onChange={(value) => { setStreetLampHoursPerNight(Number(value)); }}
                     />
                     <button
                       className="primary-button dispatch-button"
                       type="button"
-                      onClick={() => optimization && runDispatch(optimization.annualGenerationMwh)}
-                      disabled={!optimization || dispatchLoading}
+                      onClick={() => runDispatch(optimization?.annualGenerationMwh)}
+                      disabled={dispatchLoading}
                     >
                       <Icon name="bolt" size={17} />
                       {dispatchLoading ? "Allocating…" : "Apply priority queue"}
                     </button>
                   </div>
                   <p className="dispatch-note">
-                    Tier 5 is served first; equal-tier loads keep their listed order. Example load needs are planning assumptions,
-                    not values from the CERC tariff document.
+                    Tier 5 is served first; equal-tier loads keep their listed order. Street-lighting capacity is estimated from surplus generation based on planning assumptions.
                   </p>
                 </div>
 
@@ -591,9 +604,7 @@ function App() {
                     </>
                   ) : (
                     <div className="lamp-empty">
-                      {optimization
-                        ? "Update the priority queue to calculate street-lighting capacity."
-                        : "Optimize your portfolio to see how many lamps its power can support."}
+                      <span className="loader" /> Estimating street-lighting potential…
                     </div>
                   )}
                 </aside>
