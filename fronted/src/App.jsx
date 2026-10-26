@@ -39,6 +39,52 @@ const initialPlants = [
   },
 ];
 
+const initialLoads = [
+  { id: "hospital", name: "Hospitals & clinics", type: "Critical care", priority: 5, demandMwhPerDay: 45 },
+  { id: "emergency", name: "Emergency services", type: "Emergency response", priority: 4, demandMwhPerDay: 20 },
+  { id: "water", name: "Water treatment", type: "Essential services", priority: 3, demandMwhPerDay: 35 },
+  { id: "homes", name: "Community homes", type: "Community demand", priority: 2, demandMwhPerDay: 110 },
+];
+
+const computeInitialDispatch = () => {
+  const hours = 8766;
+  const annualMwh = initialPlants.reduce(
+    (sum, p) => sum + p.capacityMw * hours * (p.capacityUtilizationPercent / 100),
+    0
+  );
+  const dailyGen = annualMwh / 365;
+  let remaining = dailyGen;
+  const sortedLoads = [...initialLoads].sort((a, b) => b.priority - a.priority);
+  const loadsMap = {};
+  for (const load of sortedLoads) {
+    const allocated = Math.min(remaining, load.demandMwhPerDay);
+    remaining = Math.max(0, remaining - allocated);
+    loadsMap[load.id] = allocated;
+  }
+  const orderedLoads = sortedLoads.map((load, qIdx) => ({
+    ...load,
+    index: initialLoads.findIndex((l) => l.id === load.id),
+    allocatedMwhPerDay: loadsMap[load.id],
+  }));
+  const loadsList = initialLoads.map((load, index) => ({
+    ...load,
+    index,
+    allocatedMwhPerDay: loadsMap[load.id] ?? 0,
+  }));
+  const lampEnergyMwh = (100 * 12) / 1000000;
+  const streetLampsPowered = lampEnergyMwh > 0 ? Math.floor(remaining / lampEnergyMwh) : 0;
+  return {
+    availableGenerationMwhPerDay: dailyGen,
+    remainingEnergyMwhPerDay: remaining,
+    streetLampsPowered,
+    loads: loadsList,
+    orderedLoads,
+    queueOrder: sortedLoads.map((l) => initialLoads.findIndex((orig) => orig.id === l.id)),
+  };
+};
+
+const initialDispatch = computeInitialDispatch();
+
 const initialEstimate = {
   plantCapacityMw: 10,
   capacityUtilizationPercent: 80,
@@ -50,13 +96,6 @@ const initialEstimate = {
   averageSbiMclrPercent: 8.5,
   matRatePercent: 15,
 };
-
-const initialLoads = [
-  { id: "hospital", name: "Hospitals & clinics", type: "Critical care", priority: 5, demandMwhPerDay: 45 },
-  { id: "emergency", name: "Emergency services", type: "Emergency response", priority: 4, demandMwhPerDay: 20 },
-  { id: "water", name: "Water treatment", type: "Essential services", priority: 3, demandMwhPerDay: 35 },
-  { id: "homes", name: "Community homes", type: "Community demand", priority: 2, demandMwhPerDay: 110 },
-];
 
 const priorityNames = {
   5: "Critical · first",
@@ -127,6 +166,7 @@ function Field({ label, value, onChange, suffix, min = 0, max, step = 1, hint })
 
 function App() {
   const [activeView, setActiveView] = useState("optimizer");
+  const [showCercReference, setShowCercReference] = useState(false);
   const [plants, setPlants] = useState(initialPlants);
   const [capitalBudgetCrore, setCapitalBudgetCrore] = useState(180);
   const [availableWasteTonnesPerDay, setAvailableWasteTonnesPerDay] = useState(700);
@@ -136,7 +176,7 @@ function App() {
   const [loads, setLoads] = useState(initialLoads);
   const [streetLampWattage, setStreetLampWattage] = useState(100);
   const [streetLampHoursPerNight, setStreetLampHoursPerNight] = useState(12);
-  const [dispatch, setDispatch] = useState(null);
+  const [dispatch, setDispatch] = useState(initialDispatch);
   const [dispatchLoading, setDispatchLoading] = useState(false);
   const [dispatchError, setDispatchError] = useState("");
   const [estimateInputs, setEstimateInputs] = useState(initialEstimate);
@@ -307,9 +347,13 @@ function App() {
           >
             <Icon name="chart" /><span>Project estimator</span>
           </button>
-          <a className="nav-item nav-link" href="#reference">
+          <button
+            className="nav-item nav-link"
+            type="button"
+            onClick={() => setShowCercReference(true)}
+          >
             <Icon name="leaf" /><span>CERC reference</span><Icon name="arrow" size={15} />
-          </a>
+          </button>
         </nav>
 
         <div className="sidebar-bottom">
@@ -478,11 +522,17 @@ function App() {
                   <div className="result-rule"><span>PLANNING INSIGHT</span><p>More generation is not always a bigger plant. Feedstock availability can make a smaller, efficient mix the better system choice.</p></div>
                 </section>
 
-                <section className="source-mini" id="reference">
+                <button
+                  className="source-mini"
+                  id="reference"
+                  type="button"
+                  onClick={() => setShowCercReference(true)}
+                  aria-label="View CERC 2024 reference details"
+                >
                   <div className="source-mini-icon"><Icon name="leaf" /></div>
                   <div><span>CERC 2024 · MSW / RDF</span><strong>20-year useful life</strong><p>Retained by the Commission for municipal waste plants.</p></div>
                   <span className="source-page">SOR · PP 7, 9</span>
-                </section>
+                </button>
               </aside>
             </div>
             <section className="panel dispatch-panel">
@@ -669,9 +719,92 @@ function App() {
             <div className="reference-fact"><span>14% RoE</span><strong>Return on equity</strong><small>Grossed up with MAT · SOR pp. 26–28</small></div>
           </section>
 
+          <section className="research-section" aria-labelledby="research-heading">
+            <div className="research-heading">
+              <div>
+                <span className="section-kicker">IEEE Xplore · FURTHER READING</span>
+                <h2 id="research-heading">IEEE research papers</h2>
+              </div>
+              <p>IEEE journal and conference papers on MSW power generation, energy recovery and gasification.</p>
+            </div>
+            <div className="research-grid">
+              <article className="research-card">
+                <span className="research-topic">INDIA · POWER GENERATION</span>
+                <h3>Municipal solid waste fueled power generation for India</h3>
+                <p className="research-meta">C. Palanichamy, N. S. Babu &amp; C. Nadarajan · <i>IEEE Transactions on Energy Conversion</i> · 2002</p>
+                <p className="research-summary">Examines MSW-fueled electricity generation in India, including a feasibility study for a proposed Tamil Nadu project.</p>
+                <a href="https://ieeexplore.ieee.org/document/805183" target="_blank" rel="noreferrer">
+                  View on IEEE Xplore <span aria-hidden="true">↗</span>
+                </a>
+              </article>
+              <article className="research-card">
+                <span className="research-topic">INDIA · MSW ENERGY RECOVERY</span>
+                <h3>Municipal solid waste as a source of energy</h3>
+                <p className="research-meta">R. K. Joshi &amp; S. Ahmed · <i>2015 Annual IEEE India Conference (INDICON)</i> · 2015</p>
+                <p className="research-summary">A mini-review discussing technological aspects of energy production from MSW and the potential role of waste treatment in reducing environmental impacts.</p>
+                <a href="https://ieeexplore.ieee.org/document/7443789" target="_blank" rel="noreferrer">
+                  View on IEEE Xplore <span aria-hidden="true">↗</span>
+                </a>
+              </article>
+              <article className="research-card">
+                <span className="research-topic">INDIA · GASIFICATION REVIEW</span>
+                <h3>Waste-to-Energy: Reviewing Gasification of Municipal Solid Waste</h3>
+                <p className="research-meta">M. K. Aravindan, G. K. Kantak &amp; B. Wadhwa · <i>2023 International Conference on Power Energy, Environment &amp; Intelligent Control</i> · 2023</p>
+                <p className="research-summary">Reviews MSW gasification technologies and studies, including fuel conversion, technical approaches and economic assessments for waste-to-energy.</p>
+                <a href="https://ieeexplore.ieee.org/document/10451061" target="_blank" rel="noreferrer">
+                  View on IEEE Xplore <span aria-hidden="true">↗</span>
+                </a>
+              </article>
+            </div>
+            <p className="research-disclaimer">Paper descriptions are brief summaries. IEEE Xplore provides the publisher record and access options; access to full text may require an IEEE subscription.</p>
+          </section>
+
           <footer className="page-footer"><span>WATTCYCLE <i>·</i> WASTE-TO-ENERGY PLANNING</span><span>Illustrative planning tool · Not a regulatory tariff order</span></footer>
         </section>
       </main>
+      {showCercReference && (
+        <div
+          className="reference-dialog-backdrop"
+          onClick={() => setShowCercReference(false)}
+        >
+          <section
+            className="reference-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cerc-reference-title"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setShowCercReference(false);
+            }}
+          >
+            <button
+              className="reference-dialog-close"
+              type="button"
+              onClick={() => setShowCercReference(false)}
+              aria-label="Close CERC reference details"
+              autoFocus
+            >
+              ×
+            </button>
+            <span className="section-kicker">SOURCE NOTES · 2024</span>
+            <h2 id="cerc-reference-title">CERC MSW / RDF assumptions</h2>
+            <p className="reference-dialog-intro">
+              Planning assumptions drawn from the CERC 2024 Statement of Reasons (SOR).
+              Page numbers below refer to that document.
+            </p>
+            <ul className="reference-dialog-facts">
+              <li><strong>Useful life</strong><span>20 years · SOR pp. 7, 9</span></li>
+              <li><strong>Depreciation</strong><span>4.67% for the first 15 years; 10% salvage value · SOR p. 26</span></li>
+              <li><strong>Loan interest</strong><span>Average SBI MCLR + 200 basis points; 15-year loan tenure · SOR p. 24</span></li>
+              <li><strong>Return on equity</strong><span>14%, grossed up with MAT · SOR pp. 26–28</span></li>
+            </ul>
+            <p className="reference-dialog-note">
+              These references inform an indicative planning estimate; this tool is not a
+              CERC tariff determination. Check the applicable CERC order for regulatory use.
+            </p>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
