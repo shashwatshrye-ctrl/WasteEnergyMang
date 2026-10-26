@@ -29,7 +29,8 @@ const build = spawnSync(
 );
 
 if (build.error || build.status !== 0) {
-  const detail = build.error?.message || build.stderr || "C++ compilation failed.";
+  const detail =
+    build.error?.message || build.stderr || "C++ compilation failed.";
   console.error(detail);
   process.exit(1);
 }
@@ -51,7 +52,9 @@ function runBackend(args) {
     throw new Error(`Could not run the C++ optimizer: ${result.error.message}`);
   }
   if (result.status !== 0) {
-    throw new Error(result.stderr.trim() || "The C++ backend rejected the request.");
+    throw new Error(
+      result.stderr.trim() || "The C++ backend rejected the request.",
+    );
   }
   try {
     return JSON.parse(result.stdout);
@@ -71,9 +74,15 @@ function validateEstimate(body) {
     "matRatePercent",
   ];
   const values = numericFields.map((field) => readNumber(body[field], field));
-  const operatingDaysPerYear = readNumber(body.operatingDaysPerYear, "operatingDaysPerYear");
+  const operatingDaysPerYear = readNumber(
+    body.operatingDaysPerYear,
+    "operatingDaysPerYear",
+  );
   const projectYear = readNumber(body.projectYear, "projectYear");
-  if (!Number.isInteger(operatingDaysPerYear) || !Number.isInteger(projectYear)) {
+  if (
+    !Number.isInteger(operatingDaysPerYear) ||
+    !Number.isInteger(projectYear)
+  ) {
     throw new Error("Operating days and project year must be whole numbers.");
   }
   return [
@@ -92,7 +101,10 @@ function validateEstimate(body) {
 
 function validateOptimization(body) {
   const budget = readNumber(body.capitalBudgetCrore, "capitalBudgetCrore");
-  const waste = readNumber(body.availableWasteTonnesPerDay, "availableWasteTonnesPerDay");
+  const waste = readNumber(
+    body.availableWasteTonnesPerDay,
+    "availableWasteTonnesPerDay",
+  );
   if (!Array.isArray(body.plants) || body.plants.length > 16) {
     throw new Error("Provide up to 16 plant options.");
   }
@@ -104,15 +116,25 @@ function validateOptimization(body) {
     }
     const values = [
       readNumber(plant.capacityMw, `Plant ${index + 1} capacity`),
-      readNumber(plant.capacityUtilizationPercent, `Plant ${index + 1} utilization`),
+      readNumber(
+        plant.capacityUtilizationPercent,
+        `Plant ${index + 1} utilization`,
+      ),
       readNumber(plant.dailyWasteTonnes, `Plant ${index + 1} waste input`),
       readNumber(plant.capitalCostCrore, `Plant ${index + 1} capital cost`),
     ];
     args.push(...values);
-    return { ...plant, ...Object.fromEntries(
-      ["capacityMw", "capacityUtilizationPercent", "dailyWasteTonnes", "capitalCostCrore"]
-        .map((key, valueIndex) => [key, values[valueIndex]]),
-    ) };
+    return {
+      ...plant,
+      ...Object.fromEntries(
+        [
+          "capacityMw",
+          "capacityUtilizationPercent",
+          "dailyWasteTonnes",
+          "capitalCostCrore",
+        ].map((key, valueIndex) => [key, values[valueIndex]]),
+      ),
+    };
   });
   return { args, plants };
 }
@@ -122,7 +144,10 @@ function validateDispatch(body) {
     body.availableGenerationMwhPerDay,
     "availableGenerationMwhPerDay",
   );
-  const streetLampWattage = readNumber(body.streetLampWattage, "streetLampWattage");
+  const streetLampWattage = readNumber(
+    body.streetLampWattage,
+    "streetLampWattage",
+  );
   const streetLampHours = readNumber(
     body.streetLampHoursPerNight,
     "streetLampHoursPerNight",
@@ -131,14 +156,25 @@ function validateDispatch(body) {
     throw new Error("Provide up to 16 priority loads.");
   }
 
-  const args = ["dispatch", availableGeneration, streetLampWattage, streetLampHours, body.loads.length];
+  const args = [
+    "dispatch",
+    availableGeneration,
+    streetLampWattage,
+    streetLampHours,
+    body.loads.length,
+  ];
   const loads = body.loads.map((load, index) => {
     if (!load || typeof load !== "object") {
       throw new Error(`Priority load ${index + 1} is invalid.`);
     }
-    const priority = readNumber(load.priority, `Priority load ${index + 1} priority`);
+    const priority = readNumber(
+      load.priority,
+      `Priority load ${index + 1} priority`,
+    );
     if (!Number.isInteger(priority)) {
-      throw new Error(`Priority load ${index + 1} must use a whole-number priority.`);
+      throw new Error(
+        `Priority load ${index + 1} must use a whole-number priority.`,
+      );
     }
     const demandMwhPerDay = readNumber(
       load.demandMwhPerDay,
@@ -210,14 +246,18 @@ async function handleApi(request, response) {
         ...loads[load.index],
         ...load,
       }));
-      result.orderedLoads = result.queueOrder.map((index) => result.loads[index]);
+      result.orderedLoads = result.queueOrder.map(
+        (index) => result.loads[index],
+      );
       respondJson(response, 200, result);
       return;
     }
 
     const { args, plants } = validateOptimization(body);
     const result = runBackend(args);
-    result.selectedPlants = result.selectedIndices.map((index) => plants[index]);
+    result.selectedPlants = result.selectedIndices.map(
+      (index) => plants[index],
+    );
     respondJson(response, 200, result);
   } catch (error) {
     respondJson(response, 400, { error: error.message });
@@ -234,7 +274,9 @@ const server = createHttpServer(async (request, response) => {
     const distDirectory = path.join(frontendDirectory, "dist");
     let requestPath;
     try {
-      requestPath = decodeURIComponent(new URL(request.url, "http://localhost").pathname);
+      requestPath = decodeURIComponent(
+        new URL(request.url, "http://localhost").pathname,
+      );
     } catch {
       response.writeHead(400);
       response.end("Invalid URL");
@@ -243,10 +285,15 @@ const server = createHttpServer(async (request, response) => {
     const requestedFile = path.resolve(distDirectory, `.${requestPath}`);
     const safeRoot = path.resolve(distDirectory);
     const isInsideDist =
-      requestedFile === safeRoot || requestedFile.startsWith(`${safeRoot}${path.sep}`);
+      requestedFile === safeRoot ||
+      requestedFile.startsWith(`${safeRoot}${path.sep}`);
     const hasRequestedFile =
-      isInsideDist && existsSync(requestedFile) && statSync(requestedFile).isFile();
-    const file = hasRequestedFile ? requestedFile : path.join(distDirectory, "index.html");
+      isInsideDist &&
+      existsSync(requestedFile) &&
+      statSync(requestedFile).isFile();
+    const file = hasRequestedFile
+      ? requestedFile
+      : path.join(distDirectory, "index.html");
     const contentType = file.endsWith(".js")
       ? "text/javascript; charset=utf-8"
       : file.endsWith(".css")
@@ -268,23 +315,27 @@ const vite =
     ? null
     : await import("vite").then(({ createServer }) =>
         createServer({
-        configFile: path.join(frontendDirectory, "vite.config.js"),
-        server: { middlewareMode: true, hmr: { server } },
-        appType: "spa",
+          configFile: path.join(frontendDirectory, "vite.config.js"),
+          server: { middlewareMode: true, hmr: { server } },
+          appType: "spa",
         }),
       );
 
 const port = Number(process.env.PORT || 5173);
 server.listen(port, "127.0.0.1", () => {
   console.log(`WattCycle is ready at http://127.0.0.1:${port}`);
-  console.log("C++ estimate and portfolio optimization APIs are available at /api.");
+  console.log(
+    "C++ estimate and portfolio optimization APIs are available at /api.",
+  );
 });
 
 async function shutdown() {
   server.close();
   if (vite) await vite.close();
   try {
-    await import("node:fs/promises").then(({ unlink }) => unlink(backendExecutable));
+    await import("node:fs/promises").then(({ unlink }) =>
+      unlink(backendExecutable),
+    );
   } catch {
     // The operating system may already have removed the temporary executable.
   }

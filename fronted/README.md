@@ -18,6 +18,16 @@ Open <http://127.0.0.1:5173>. The dev server compiles the C++ API into a
 temporary executable when it starts. The executable is removed when the server
 shuts down.
 
+## Frontend structure
+
+- `src/App.jsx` composes the app shell and switches between the planner and
+  estimator.
+- `src/hooks/useWasteEnergyPlanner.js` owns planner state and API requests.
+- `src/components/` contains the planner, dispatch, estimate, reference, and
+  shared UI components.
+- `src/data/initialData.js` holds sample inputs and initial dispatch data.
+- `src/utils/formatters.js` contains shared number and energy formatters.
+
 To build and run the production app:
 
 ```powershell
