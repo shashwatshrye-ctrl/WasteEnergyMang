@@ -1,3 +1,3 @@
 {
-    "cmake.sourceDirectory": "D:/study/dsa/project/backend/WasteEnergy"
+    "cmake.sourceDirectory": "${workspaceFolder}/backend"
 }

@@ -6,7 +6,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 const frontendDirectory = path.dirname(fileURLToPath(import.meta.url));
-const sourceDirectory = path.resolve(frontendDirectory, "..", "WasteEnergy");
+const sourceDirectory = path.resolve(frontendDirectory, "..", "backend");
 const backendExecutable = path.join(
   tmpdir(),
   `wasteenergy-api-${process.pid}${process.platform === "win32" ? ".exe" : ""}`,

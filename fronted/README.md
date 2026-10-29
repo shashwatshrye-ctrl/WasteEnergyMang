@@ -2,7 +2,7 @@
 
 WattCycle is a React planning interface for waste-to-energy projects. Its
 estimate and portfolio APIs call the C++ backend in
-`../WasteEnergy`; the browser does not reimplement the calculations.
+`../backend`; the browser does not reimplement the calculations.
 
 ## Run locally
 
